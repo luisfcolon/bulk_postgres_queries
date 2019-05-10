@@ -1,6 +1,6 @@
 from io import StringIO
 
-from postgres import cursor, connection
+from postgres import py_cursor
 
 
 def generate_insert_placeholders(keys):
@@ -18,10 +18,6 @@ class BulkQueries(object):
         self.insert_rows = []
         self.update_rows = []
         self.upsert_rows = []
-
-    @staticmethod
-    def close_connection():
-        connection.close()
 
     def insert_row(self, row):
         self.insert_rows.append(row)
@@ -42,7 +38,8 @@ class BulkQueries(object):
         if self.upsert_rows:
             self.run_upserts()
 
-    def run_inserts(self):
+    @py_cursor
+    def run_inserts(self, cursor=None):
         values = str()
 
         for row in self.insert_rows:
@@ -50,9 +47,9 @@ class BulkQueries(object):
 
         buffer = StringIO(values)
         cursor.copy_from(buffer, self.table, sep=chr(29), columns=self.columns)
-        connection.commit()
 
-    def run_updates(self):
+    @py_cursor
+    def run_updates(self, cursor=None):
         bulk_queries = str()
         bulk_values = []
 
@@ -68,14 +65,15 @@ class BulkQueries(object):
             bulk_values += values
 
         cursor.execute(bulk_queries, bulk_values)
-        connection.commit()
 
-    def run_upserts(self):
+    @py_cursor
+    def run_upserts(self, cursor=None):
         bulk_queries = str()
         bulk_values = []
 
         for row in self.upsert_rows:
-            update_columns = row.pop('update_columns')
+            update_columns = row.pop('update_columns', None)
+            columns = ','.join([*row])
             values = list(row.values())
             placeholders = generate_insert_placeholders([*row])
 
@@ -83,12 +81,11 @@ class BulkQueries(object):
                 setters = generate_update_setters([*update_columns])
                 values += list(map(lambda key: row[key], update_columns))
 
-                query = f'INSERT INTO {self.table} VALUES ({placeholders}) ON CONFLICT (id) DO UPDATE SET {setters};'
+                query = f'INSERT INTO {self.table} ({columns}) VALUES ({placeholders}) ON CONFLICT (id) DO UPDATE SET {setters};'
             else:
-                query = f'INSERT INTO {self.table} VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING;'
+                query = f'INSERT INTO {self.table} ({columns}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING;'
 
             bulk_queries += query
             bulk_values += values
 
         cursor.execute(bulk_queries, bulk_values)
-        connection.commit()
