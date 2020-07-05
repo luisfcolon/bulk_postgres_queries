@@ -11,6 +11,10 @@ def generate_update_setters(keys):
     return ', '.join(list(map(lambda key: f'{key} = %s', keys)))
 
 
+def generate_insert_values(keys):
+    return f"{chr(29).join(list(map(lambda key: str(key), keys)))}\n"
+
+
 class BulkQueries(object):
     def __init__(self, columns, table):
         self.table = table
@@ -43,7 +47,7 @@ class BulkQueries(object):
         values = str()
 
         for row in self.insert_rows:
-            values += f"{chr(29).join(list(row.values()))}\n"
+            values += generate_insert_values([*row.values()])
 
         buffer = StringIO(values)
         cursor.copy_from(buffer, self.table, sep=chr(29), columns=self.columns)
